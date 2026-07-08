@@ -1,6 +1,6 @@
 import { FormEvent, useState } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ChefHat, Heart, Search, WifiOff } from "lucide-react";
+import { ChefHat, Search, WifiOff } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -57,10 +57,8 @@ export function Header() {
               Offline
             </span>
           )}
-          <Button variant="ghost" size="icon" asChild aria-label="View favorites">
-            <Link to="/favorites">
-              <Heart className="size-5" />
-            </Link>
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/favorites">Favorites</Link>
           </Button>
           <ThemeToggle />
         </nav>

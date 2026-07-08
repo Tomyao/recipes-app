@@ -36,7 +36,7 @@ export function CategoryChips({ activeCategory, onSelect }: CategoryChipsProps) 
         aria-pressed={activeCategory === null}
         onClick={() => onSelect(null)}
       >
-        All
+        Random
       </Button>
       {data.categories.map((category) => (
         <Button

@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Recipes app icon">
+  <rect width="512" height="512" fill="#f97316"/>
+  <g fill="#ffffff" transform="translate(64 64) scale(0.75)">
+    <path d="M256 96c-45 0-82 33-88 76-38 6-66 39-66 78 0 23 10 44 26 58v20c0 11 9 20 20 20h216c11 0 20-9 20-20v-20c16-14 26-35 26-58 0-39-28-72-66-78-6-43-43-76-88-76z"/>
+    <rect x="140" y="360" width="232" height="40" rx="12"/>
+  </g>
+</svg>

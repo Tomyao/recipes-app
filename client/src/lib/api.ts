@@ -2,9 +2,14 @@ import type { Category, FilterResult, MealDbMeal } from "./types";
 
 /**
  * Thin client for our own Express proxy. The client NEVER calls TheMealDB
- * directly — every request goes through same-origin /api/* so the API key
- * stays server-side. In dev, Vite proxies /api to the Express server.
+ * directly — every request goes through our own proxy so the API key stays
+ * server-side. In dev, Vite proxies relative /api/* to the local Express
+ * server. In production, if the client and server are deployed as separate
+ * origins (e.g. two independent Vercel projects), set VITE_API_BASE_URL to
+ * the server's URL; leave it unset for same-origin deployments, where
+ * relative paths keep working as-is.
  */
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL ?? "";
 
 export class ApiError extends Error {
   constructor(message: string, public status: number) {
@@ -14,7 +19,7 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const res = await fetch(`${API_BASE_URL}${path}`);
   if (!res.ok) {
     let message = `Request failed with status ${res.status}`;
     try {

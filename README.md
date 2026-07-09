@@ -80,7 +80,11 @@ The Vite dev server proxies `/api/*` to `http://localhost:5174`, so the client o
 | `PORT` | `5174` | Port the Express server listens on |
 | `CLIENT_ORIGIN` | `http://localhost:5173` | Comma-separated allowed CORS origins |
 
-The client has no `.env` — it never talks to TheMealDB or holds any secret, only relative `/api/*` calls.
+The client needs no `.env` for local dev or a same-origin deployment — it never talks to TheMealDB or holds any secret, only `/api/*` calls. If the client and server are deployed on different origins (see "Deploying both to Vercel" below), set one optional client env var:
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `VITE_API_BASE_URL` | unset (relative `/api/*`) | Absolute origin of the deployed server, e.g. `https://recipes-app-server.vercel.app` |
 
 ## shadcn/ui setup notes
 
@@ -146,25 +150,25 @@ Each strategy is a small standalone function in `sw.js` (`networkFirst`, `staleW
 ## Deploy suggestions
 
 - **Server**: Render (or Railway/Fly.io) — set `MEALDB_API_KEY`, `MEALDB_API_BASE`, `CLIENT_ORIGIN` (your deployed client origin) as environment variables; build command `npm i && npm run build`, start command `npm start`.
-- **Client**: Netlify or Vercel — build command `npm run build`, publish directory `client/dist`. Set a rewrite/proxy so `/api/*` forwards to the deployed server origin (Netlify `_redirects` or `vercel.json` rewrites), keeping the client's calls same-origin in production too.
+- **Client**: Netlify or Vercel — build command `npm run build`, publish directory `client/dist`. If your host reliably supports a same-origin reverse-proxy rewrite to the server's origin (e.g. Netlify `_redirects`), that keeps the client's `/api/*` calls relative with no other changes. Otherwise (see the Vercel-specific notes below for why that isn't reliable there), set `VITE_API_BASE_URL` to the deployed server's absolute URL and make sure the server's `CLIENT_ORIGIN` includes the client's origin for CORS.
 
 ### Deploying both to Vercel
 
-Both `server/` and `client/` are set up as **separate Vercel projects** (one repo, two projects, each with its own "Root Directory" setting) connected via a rewrite so the browser only ever talks to the client's own origin — same-origin `/api/*` calls, exactly like local dev's Vite proxy. This means `src/lib/api.ts` and `public/sw.js` need zero code changes to work in production.
+`server/` and `client/` are set up as **separate Vercel projects** (one repo, two projects, each with its own "Root Directory" setting) on genuinely different origins, talking to each other via an absolute API URL + CORS — not same-origin rewrites/proxying. (An earlier version of this guide tried routing `/api/*` through a `vercel.json` rewrite to an external URL so the two origins would appear same-origin to the browser; in practice that rewrite doesn't reliably forward to another Vercel project, so the client ended up calling its own origin instead of the server. The setup below avoids that entirely.)
 
 1. **Deploy the server first.**
    - New Vercel project → same repo → **Root Directory: `server`**.
    - Vercel auto-detects `api/index.ts` as a Node.js serverless function (which exports the Express app from `src/app.ts`); `server/vercel.json` rewrites every request on this project to that function, so all of `/api/search`, `/api/meal/:id`, `/api/categories`, `/api/filter`, `/api/random` reach the same Express instance.
-   - Set env vars: `MEALDB_API_KEY` (`1` for dev), `MEALDB_API_BASE` (`https://www.themealdb.com/api/json/v1`). `CLIENT_ORIGIN` is optional here (CORS only matters if something calls this project directly instead of through the client's rewrite below) — set it to the client's URL from step 2 if you want direct access to work too.
+   - Set env vars: `MEALDB_API_KEY` (`1` for dev), `MEALDB_API_BASE` (`https://www.themealdb.com/api/json/v1`), and `CLIENT_ORIGIN` — set this to the client's URL from step 2 (comma-separate multiple origins, e.g. a Vercel preview + production URL). This is required now: the browser makes a real cross-origin request to this project, so it needs a matching CORS `Access-Control-Allow-Origin` response, which `cors()` in `src/app.ts` derives from `CLIENT_ORIGIN`.
    - Deploy, then note the resulting URL (e.g. `https://recipes-app-server.vercel.app`).
 
 2. **Point the client at it, then deploy the client.**
-   - Edit `client/vercel.json`, replacing `REPLACE_WITH_YOUR_SERVER_DEPLOYMENT_URL` in the `/api/:path*` rewrite's `destination` with the server URL from step 1, and commit that change.
    - New Vercel project → same repo → **Root Directory: `client`**. Vercel auto-detects the Vite framework (build command `npm run build`, output `dist`).
-   - Deploy. `client/vercel.json`'s second rule (`/(.*) → /index.html`) is the SPA fallback so React Router routes like `/recipe/52772` or `/favorites` work on direct load/refresh, not just client-side navigation.
-   - Once live, `https://<your-client>.vercel.app/api/*` is transparently proxied to the server project by Vercel itself — the browser never makes a cross-origin request, so no CORS headaching required for the app to work.
+   - Set env var `VITE_API_BASE_URL` to the server URL from step 1 (no trailing slash). `src/lib/api.ts` prefixes every request with it; when unset (local dev, or a same-origin deployment) it falls back to relative `/api/*` paths as before.
+   - Deploy. `client/vercel.json`'s rewrite (`/(.*) → /index.html`) is the SPA fallback so React Router routes like `/recipe/52772` or `/favorites` work on direct load/refresh, not just client-side navigation.
+   - If you later change the server's URL, redeploy the client with the updated `VITE_API_BASE_URL` — Vite inlines env vars at build time, so it won't pick up a changed value without a rebuild.
 
-If you'd rather avoid the "deploy server, copy its URL, edit a file, redeploy client" two-step, point the server project at a stable custom domain (e.g. `api.yourdomain.com`) first and put that in `client/vercel.json` from the start.
+Since the client and server are now on different origins, `public/sw.js` matches `/api/*` requests by path only (not `url.origin === self.location.origin`) so its network-first/stale-while-revalidate caching still applies to the cross-origin API calls.
 
 ## Security
 

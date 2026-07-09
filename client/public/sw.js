@@ -66,8 +66,10 @@ self.addEventListener("fetch", (event) => {
     return;
   }
 
-  // Our own proxy API.
-  if (url.origin === self.location.origin && url.pathname.startsWith("/api/")) {
+  // Our own proxy API. Matched by path only (not origin) because in
+  // production the server may be deployed on a different origin than the
+  // client (see VITE_API_BASE_URL) — the app calls no other /api/* endpoints.
+  if (url.pathname.startsWith("/api/")) {
     if (url.pathname === "/api/categories") {
       event.respondWith(staleWhileRevalidate(request, API_CACHE));
     } else {

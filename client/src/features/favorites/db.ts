@@ -30,7 +30,12 @@ function getDb(): Promise<IDBPDatabase<RecipesDbSchema>> {
 
 export async function saveFavorite(meal: FavoriteMeal): Promise<void> {
   const db = await getDb();
-  await db.put(STORE_NAME, meal);
+  // Preserve the original savedAt when re-saving an already-favorited meal
+  // (e.g. Details backfilling full ingredients/instructions onto a favorite
+  // that was first saved from a shallow listing card) so "recently saved"
+  // order isn't disturbed just by reopening a recipe.
+  const existing = await db.get(STORE_NAME, meal.idMeal);
+  await db.put(STORE_NAME, { ...meal, savedAt: existing?.savedAt ?? meal.savedAt });
 }
 
 export async function removeFavorite(idMeal: string): Promise<void> {

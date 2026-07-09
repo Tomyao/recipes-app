@@ -28,6 +28,8 @@ export function CategoryChips({ activeCategory, onSelect }: CategoryChipsProps) 
 
   if (isError || !data?.categories?.length) return null;
 
+  const sortedCategories = [...data.categories].sort((a, b) => a.strCategory.localeCompare(b.strCategory));
+
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filter by category">
       <Button
@@ -39,7 +41,7 @@ export function CategoryChips({ activeCategory, onSelect }: CategoryChipsProps) 
       >
         Random
       </Button>
-      {data.categories.map((category) => (
+      {sortedCategories.map((category) => (
         <Button
           key={category.idCategory}
           variant={activeCategory === category.strCategory ? "default" : "outline"}

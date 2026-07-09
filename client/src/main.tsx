@@ -16,7 +16,7 @@ import "@/styles/globals.css";
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter future={{ v7_relativeSplatPath: true, v7_startTransition: true }}>
         <App />
       </BrowserRouter>
       <Toaster richColors closeButton position="bottom-right" />

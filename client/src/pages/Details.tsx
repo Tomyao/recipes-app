@@ -1,10 +1,11 @@
+import { useEffect, type ReactNode } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ExternalLink, Heart, WifiOff, Youtube } from "lucide-react";
 import { api } from "@/lib/api";
-import { getFavorite } from "@/features/favorites/db";
+import { getFavorite, saveFavorite } from "@/features/favorites/db";
 import { useIsFavorite, useToggleFavorite } from "@/features/favorites/useFavorites";
-import { toIngredients, toFavorite } from "@/lib/types";
+import { toIngredients, toFavorite, type Ingredient } from "@/lib/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -17,6 +18,11 @@ export function Details() {
     queryKey: ["meal", id],
     queryFn: () => api.getMeal(id),
     enabled: Boolean(id),
+    // Default networkMode ("online") would just pause this query while offline
+    // instead of erroring, so it'd never reach isError and never fall back to
+    // the cached copy below. "always" lets the service worker's own
+    // network-first/cache-fallback handling decide the outcome instead.
+    networkMode: "always",
   });
 
   // If the network/proxy request failed (e.g. offline) but this recipe was
@@ -25,12 +31,24 @@ export function Details() {
     queryKey: ["favorite-fallback", id],
     queryFn: () => getFavorite(id),
     enabled: Boolean(id) && mealQuery.isError,
+    // Pure IndexedDB read — must run regardless of connectivity.
+    networkMode: "always",
   });
 
   const { data: favorited } = useIsFavorite(id);
   const toggleFavorite = useToggleFavorite();
 
   const meal = mealQuery.data?.meals?.[0];
+
+  // If this recipe was favorited from a shallow listing card (which lacks
+  // ingredients/instructions), backfill the full details into IndexedDB now
+  // that we have them, so the offline copy is complete next time. Preserves
+  // the original savedAt (see saveFavorite), so this doesn't reorder favorites.
+  useEffect(() => {
+    if (favorited && meal) {
+      saveFavorite(toFavorite(meal)).catch(() => {});
+    }
+  }, [favorited, meal]);
 
   if (mealQuery.isLoading) {
     return (
@@ -49,25 +67,32 @@ export function Details() {
     const cached = favoriteFallback.data;
     if (cached) {
       return (
-        <div className="container flex flex-col gap-6 py-6">
-          <div role="status" className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground">
-            <WifiOff className="size-4" aria-hidden="true" />
-            You're offline — showing your saved copy of this recipe.
-          </div>
-          <img
-            src={cached.strMealThumb}
-            alt={`Photo of ${cached.strMeal}`}
-            className="mx-auto aspect-video w-full max-w-2xl rounded-lg object-cover"
-          />
-          <h1 className="text-2xl font-bold">{cached.strMeal}</h1>
-          <div className="flex gap-2">
-            {cached.strCategory && <Badge variant="secondary">{cached.strCategory}</Badge>}
-            {cached.strArea && <Badge variant="outline">{cached.strArea}</Badge>}
-          </div>
-          <p className="text-sm text-muted-foreground">
-            Full ingredients and instructions aren't available offline for this recipe yet — they'll load next time you're online.
-          </p>
-        </div>
+        <RecipeContent
+          banner={
+            <div
+              role="status"
+              className="flex items-center gap-2 rounded-md border border-border bg-muted px-3 py-2 text-sm text-muted-foreground"
+            >
+              <WifiOff className="size-4" aria-hidden="true" />
+              You're offline — showing your saved copy of this recipe.
+            </div>
+          }
+          title={cached.strMeal}
+          thumb={cached.strMealThumb}
+          category={cached.strCategory}
+          area={cached.strArea}
+          tags={cached.strTags?.split(",").map((t) => t.trim()).filter(Boolean) ?? []}
+          instructions={
+            cached.strInstructions ||
+            "Full instructions aren't available for this saved copy yet — reopen this recipe once you're back online to refresh it."
+          }
+          youtube={cached.strYoutube}
+          source={cached.strSource}
+          ingredients={cached.ingredients ?? []}
+          favorited={Boolean(favorited)}
+          onToggleFavorite={() => toggleFavorite.mutate({ meal: cached, next: !favorited })}
+          togglingFavorite={toggleFavorite.isPending}
+        />
       );
     }
 
@@ -90,11 +115,60 @@ export function Details() {
     );
   }
 
-  const ingredients = toIngredients(meal);
-  const tags = meal.strTags?.split(",").map((t) => t.trim()).filter(Boolean) ?? [];
+  return (
+    <RecipeContent
+      title={meal.strMeal}
+      thumb={meal.strMealThumb}
+      category={meal.strCategory}
+      area={meal.strArea}
+      tags={meal.strTags?.split(",").map((t) => t.trim()).filter(Boolean) ?? []}
+      instructions={meal.strInstructions}
+      youtube={meal.strYoutube}
+      source={meal.strSource}
+      ingredients={toIngredients(meal)}
+      favorited={Boolean(favorited)}
+      onToggleFavorite={() => toggleFavorite.mutate({ meal: toFavorite(meal), next: !favorited })}
+      togglingFavorite={toggleFavorite.isPending}
+    />
+  );
+}
 
+interface RecipeContentProps {
+  banner?: ReactNode;
+  title: string;
+  thumb?: string;
+  category?: string;
+  area?: string;
+  tags: string[];
+  instructions?: string;
+  youtube?: string | null;
+  source?: string | null;
+  ingredients: Ingredient[];
+  favorited: boolean;
+  onToggleFavorite: () => void;
+  togglingFavorite: boolean;
+}
+
+/** Shared recipe layout, used by both the live (network) view and the offline cached-favorite fallback. */
+function RecipeContent({
+  banner,
+  title,
+  thumb,
+  category,
+  area,
+  tags,
+  instructions,
+  youtube,
+  source,
+  ingredients,
+  favorited,
+  onToggleFavorite,
+  togglingFavorite,
+}: RecipeContentProps) {
   return (
     <article className="container flex flex-col gap-6 py-6">
+      {banner}
+
       {/*
         Named grid areas so, on desktop, the ingredients column sits on the
         right and spans the full height, while the title, favorite button,
@@ -104,11 +178,11 @@ export function Details() {
       */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3 md:gap-8 md:[grid-template-areas:'title_title_ingredients'_'favorite_favorite_ingredients'_'image_image_ingredients'_'instructions_instructions_ingredients']">
         <div className="order-first flex flex-col gap-3 md:order-none md:[grid-area:title]">
-          <h1 className="text-2xl font-bold">{meal.strMeal}</h1>
+          <h1 className="text-2xl font-bold">{title}</h1>
 
           <div className="flex flex-wrap gap-1.5">
-            {meal.strCategory && <Badge variant="secondary">{meal.strCategory}</Badge>}
-            {meal.strArea && <Badge variant="outline">{meal.strArea}</Badge>}
+            {category && <Badge variant="secondary">{category}</Badge>}
+            {area && <Badge variant="outline">{area}</Badge>}
             {tags.map((tag) => (
               <Badge key={tag} variant="outline">
                 {tag}
@@ -119,10 +193,10 @@ export function Details() {
 
         <Button
           variant={favorited ? "default" : "outline"}
-          aria-pressed={Boolean(favorited)}
-          aria-label={favorited ? `Remove ${meal.strMeal} from favorites` : `Add ${meal.strMeal} to favorites`}
-          onClick={() => toggleFavorite.mutate({ meal: toFavorite(meal), next: !favorited })}
-          disabled={toggleFavorite.isPending}
+          aria-pressed={favorited}
+          aria-label={favorited ? `Remove ${title} from favorites` : `Add ${title} to favorites`}
+          onClick={onToggleFavorite}
+          disabled={togglingFavorite}
           className="order-1 w-fit md:order-none md:[grid-area:favorite]"
         >
           <Heart className={favorited ? "fill-current" : ""} />
@@ -130,8 +204,8 @@ export function Details() {
         </Button>
 
         <img
-          src={meal.strMealThumb}
-          alt={`Photo of ${meal.strMeal}`}
+          src={thumb}
+          alt={`Photo of ${title}`}
           className="order-2 mx-auto aspect-video w-full max-w-2xl rounded-lg object-cover md:order-none md:mx-0 md:max-w-sm md:[grid-area:image]"
         />
 
@@ -160,21 +234,21 @@ export function Details() {
             Instructions
           </h2>
           <div className="flex flex-col gap-3 whitespace-pre-line text-sm leading-relaxed">
-            {meal.strInstructions}
+            {instructions}
           </div>
 
           <div className="mt-6 flex flex-wrap gap-3">
-            {meal.strYoutube && (
+            {youtube && (
               <Button variant="outline" asChild>
-                <a href={meal.strYoutube} target="_blank" rel="noreferrer">
+                <a href={youtube} target="_blank" rel="noreferrer">
                   <Youtube />
                   Watch on YouTube
                 </a>
               </Button>
             )}
-            {meal.strSource && (
+            {source && (
               <Button variant="outline" asChild>
-                <a href={meal.strSource} target="_blank" rel="noreferrer">
+                <a href={source} target="_blank" rel="noreferrer">
                   <ExternalLink />
                   Original source
                 </a>

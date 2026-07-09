@@ -26,11 +26,21 @@ DialogOverlay.displayName = DialogPrimitive.Overlay.displayName;
 const DialogContent = React.forwardRef<
   React.ElementRef<typeof DialogPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof DialogPrimitive.Content>
->(({ className, children, ...props }, ref) => (
+>(({ className, children, onPointerDownOutside, ...props }, ref) => (
   <DialogPortal>
     <DialogOverlay />
     <DialogPrimitive.Content
       ref={ref}
+      onPointerDownOutside={(event) => {
+        onPointerDownOutside?.(event);
+        // Radix's dismissable layer can leave document.body stuck with
+        // `pointer-events: none` (freezing the whole page) when a text-selection
+        // drag crosses the dialog boundary and gets misread as an outside click.
+        // Ignoring the dismiss while a selection is active avoids triggering it.
+        if (!event.defaultPrevented && window.getSelection()?.toString()) {
+          event.preventDefault();
+        }
+      }}
       className={cn(
         "fixed left-1/2 top-1/2 z-50 grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-lg border border-border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95",
         className,

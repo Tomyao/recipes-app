@@ -34,13 +34,19 @@ export interface Ingredient {
   measure: string;
 }
 
-/** Trimmed-down shape we persist to IndexedDB for offline favorites. */
+/** Shape we persist to IndexedDB for offline favorites — full recipe content, so Details still renders completely offline. */
 export interface FavoriteMeal {
   idMeal: string;
   strMeal: string;
   strCategory?: string;
   strArea?: string;
   strMealThumb?: string;
+  strInstructions?: string;
+  strTags?: string | null;
+  strYoutube?: string | null;
+  strSource?: string | null;
+  /** Omitted when favorited from a listing view (e.g. a category grid) whose API response doesn't include ingredients. */
+  ingredients?: Ingredient[];
   savedAt: number;
 }
 
@@ -63,6 +69,11 @@ export function toFavorite(meal: MealDbMeal): FavoriteMeal {
     strCategory: meal.strCategory,
     strArea: meal.strArea,
     strMealThumb: meal.strMealThumb,
+    strInstructions: meal.strInstructions,
+    strTags: meal.strTags,
+    strYoutube: meal.strYoutube,
+    strSource: meal.strSource,
+    ingredients: toIngredients(meal),
     savedAt: Date.now(),
   };
 }

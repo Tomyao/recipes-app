@@ -21,13 +21,37 @@ export function Header() {
 
   return (
     <header className="sticky top-0 z-40 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/75">
-      <div className="container flex h-16 items-center gap-4">
-        <Link to="/" className="flex shrink-0 items-center gap-2 font-bold text-lg" aria-label="Recipes home">
+      <div className="container flex flex-wrap items-center gap-3 py-3 sm:h-16 sm:flex-nowrap sm:py-0">
+        <Link
+          to="/"
+          className="order-1 flex shrink-0 items-center gap-2 font-bold text-lg"
+          aria-label="Recipes home"
+        >
           <ChefHat className="size-6 text-primary" aria-hidden="true" />
-          <span className="hidden sm:inline">Recipes</span>
+          <span>Recipes</span>
         </Link>
 
-        <form onSubmit={handleSubmit} role="search" className="flex flex-1 items-center gap-2">
+        <nav aria-label="Primary" className="order-2 ml-auto flex items-center gap-1 sm:order-3 sm:ml-0">
+          {!isOnline && (
+            <span
+              className="mr-1 flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
+              role="status"
+            >
+              <WifiOff className="size-3.5" aria-hidden="true" />
+              Offline
+            </span>
+          )}
+          <Button variant="outline" size="sm" asChild>
+            <Link to="/favorites">Favorites</Link>
+          </Button>
+          <ThemeToggle />
+        </nav>
+
+        <form
+          onSubmit={handleSubmit}
+          role="search"
+          className="order-3 flex w-full items-center gap-2 sm:order-2 sm:w-auto sm:flex-1"
+        >
           <Label htmlFor="recipe-search" className="sr-only">
             Search recipes by name
           </Label>
@@ -46,22 +70,6 @@ export function Header() {
             Search
           </Button>
         </form>
-
-        <nav aria-label="Primary" className="flex items-center gap-1">
-          {!isOnline && (
-            <span
-              className="mr-1 flex items-center gap-1 rounded-full bg-muted px-2 py-1 text-xs text-muted-foreground"
-              role="status"
-            >
-              <WifiOff className="size-3.5" aria-hidden="true" />
-              Offline
-            </span>
-          )}
-          <Button variant="outline" size="sm" asChild>
-            <Link to="/favorites">Favorites</Link>
-          </Button>
-          <ThemeToggle />
-        </nav>
       </div>
     </header>
   );

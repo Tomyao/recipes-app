@@ -4,7 +4,8 @@ import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
 interface CategoryChipsProps {
-  activeCategory: string | null;
+  /** Selected category, or "random" when the Random chip is active. `null` means neither (e.g. a search is active). */
+  activeCategory: string | "random" | null;
   onSelect: (category: string | null) => void;
 }
 
@@ -30,10 +31,10 @@ export function CategoryChips({ activeCategory, onSelect }: CategoryChipsProps) 
   return (
     <div className="flex gap-2 overflow-x-auto pb-1" role="group" aria-label="Filter by category">
       <Button
-        variant={activeCategory === null ? "default" : "outline"}
+        variant={activeCategory === "random" ? "default" : "outline"}
         size="sm"
         className="shrink-0 rounded-full"
-        aria-pressed={activeCategory === null}
+        aria-pressed={activeCategory === "random"}
         onClick={() => onSelect(null)}
       >
         Random

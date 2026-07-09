@@ -49,7 +49,7 @@ export function Home() {
 
   return (
     <div className="container flex flex-col gap-6 py-6">
-      <CategoryChips activeCategory={isFiltering ? category : null} onSelect={handleCategorySelect} />
+      <CategoryChips activeCategory={isFiltering ? category : isRandom ? "random" : null} onSelect={handleCategorySelect} />
 
       <div className="flex items-center justify-between">
         <h1 className="text-xl font-semibold">{heading}</h1>

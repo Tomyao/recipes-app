@@ -28,6 +28,8 @@ export interface FilterResult {
 
 /** Flattened ingredient/measure pair, derived from a MealDbMeal's numbered fields. */
 export interface Ingredient {
+  /** Position in TheMealDB's strIngredient1..20 list — stable and unique even when two slots share the same ingredient name. */
+  id: number;
   ingredient: string;
   measure: string;
 }
@@ -48,7 +50,7 @@ export function toIngredients(meal: MealDbMeal): Ingredient[] {
     const ingredient = meal[`strIngredient${i}`]?.trim();
     const measure = meal[`strMeasure${i}`]?.trim();
     if (ingredient) {
-      ingredients.push({ ingredient, measure: measure || "" });
+      ingredients.push({ id: i, ingredient, measure: measure || "" });
     }
   }
   return ingredients;

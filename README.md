@@ -23,7 +23,10 @@ A installable, offline-capable recipe browser built on [TheMealDB](https://www.t
 /server
   .env.example
   package.json
-  src/index.ts            Express app: security middleware, CORS, error handling
+  vercel.json              Rewrites all requests to api/index.ts (Vercel deploy)
+  api/index.ts             Vercel serverless entry — exports src/app.ts's Express app
+  src/app.ts               Express app: security middleware, CORS, routes, error handling
+  src/index.ts             Local/traditional-host entry — imports app.ts, calls app.listen()
   src/routes/mealdb.ts     /api/* routes that proxy TheMealDB
   src/cache.ts             Small in-memory TTL cache
 
@@ -42,6 +45,7 @@ A installable, offline-capable recipe browser built on [TheMealDB](https://www.t
   public/offline.html
   public/sw.js              Hand-written service worker (see "Service worker" note below)
   public/icons/*            Placeholder SVG icons
+  vercel.json               SPA fallback + reverse-proxy rewrite to the deployed server
 ```
 
 > **Note on `sw.js` location**: the brief lists it as `src/sw.js`, but it's shipped from `public/sw.js` instead. Files under `src/` are only emitted into the production build if they're imported into the JS module graph — a standalone worker script isn't. `public/` is copied byte-for-byte to the site root in both `vite dev` and the production build, which is required for a same-origin, root-scoped service worker to register reliably in both environments.
@@ -144,11 +148,29 @@ Each strategy is a small standalone function in `sw.js` (`networkFirst`, `staleW
 - **Server**: Render (or Railway/Fly.io) — set `MEALDB_API_KEY`, `MEALDB_API_BASE`, `CLIENT_ORIGIN` (your deployed client origin) as environment variables; build command `npm i && npm run build`, start command `npm start`.
 - **Client**: Netlify or Vercel — build command `npm run build`, publish directory `client/dist`. Set a rewrite/proxy so `/api/*` forwards to the deployed server origin (Netlify `_redirects` or `vercel.json` rewrites), keeping the client's calls same-origin in production too.
 
+### Deploying both to Vercel
+
+Both `server/` and `client/` are set up as **separate Vercel projects** (one repo, two projects, each with its own "Root Directory" setting) connected via a rewrite so the browser only ever talks to the client's own origin — same-origin `/api/*` calls, exactly like local dev's Vite proxy. This means `src/lib/api.ts` and `public/sw.js` need zero code changes to work in production.
+
+1. **Deploy the server first.**
+   - New Vercel project → same repo → **Root Directory: `server`**.
+   - Vercel auto-detects `api/index.ts` as a Node.js serverless function (which exports the Express app from `src/app.ts`); `server/vercel.json` rewrites every request on this project to that function, so all of `/api/search`, `/api/meal/:id`, `/api/categories`, `/api/filter`, `/api/random` reach the same Express instance.
+   - Set env vars: `MEALDB_API_KEY` (`1` for dev), `MEALDB_API_BASE` (`https://www.themealdb.com/api/json/v1`). `CLIENT_ORIGIN` is optional here (CORS only matters if something calls this project directly instead of through the client's rewrite below) — set it to the client's URL from step 2 if you want direct access to work too.
+   - Deploy, then note the resulting URL (e.g. `https://recipes-app-server.vercel.app`).
+
+2. **Point the client at it, then deploy the client.**
+   - Edit `client/vercel.json`, replacing `REPLACE_WITH_YOUR_SERVER_DEPLOYMENT_URL` in the `/api/:path*` rewrite's `destination` with the server URL from step 1, and commit that change.
+   - New Vercel project → same repo → **Root Directory: `client`**. Vercel auto-detects the Vite framework (build command `npm run build`, output `dist`).
+   - Deploy. `client/vercel.json`'s second rule (`/(.*) → /index.html`) is the SPA fallback so React Router routes like `/recipe/52772` or `/favorites` work on direct load/refresh, not just client-side navigation.
+   - Once live, `https://<your-client>.vercel.app/api/*` is transparently proxied to the server project by Vercel itself — the browser never makes a cross-origin request, so no CORS headaching required for the app to work.
+
+If you'd rather avoid the "deploy server, copy its URL, edit a file, redeploy client" two-step, point the server project at a stable custom domain (e.g. `api.yourdomain.com`) first and put that in `client/vercel.json` from the start.
+
 ## Security
 
 - The client only ever calls relative `/api/*` paths — grep `client/src` for `themealdb.com` and you'll find nothing outside of comments.
 - `MEALDB_API_KEY` is read once in `server/src/routes/mealdb.ts` and used to build the upstream URL server-side; it is never included in any response sent to the client.
-- `helmet`, `cors` (restricted to `CLIENT_ORIGIN`), and centralized error handling (no stack traces leaked to clients) are wired up in `server/src/index.ts`.
+- `helmet`, `cors` (restricted to `CLIENT_ORIGIN`), and centralized error handling (no stack traces leaked to clients) are wired up in `server/src/app.ts`.
 
 ## Post-generation checklist
 

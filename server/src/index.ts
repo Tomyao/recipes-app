@@ -1,40 +1,9 @@
-import "dotenv/config";
-import express, { type Request, type Response, type NextFunction } from "express";
-import cors from "cors";
-import helmet from "helmet";
-import compression from "compression";
-import morgan from "morgan";
-import mealdbRouter from "./routes/mealdb.js";
+import app from "./app.js";
 
-const app = express();
+// Local dev / traditional Node hosting entrypoint. Not used on Vercel — there,
+// api/index.ts imports the same app and Vercel's Node runtime calls it directly
+// per-request instead of binding a port.
 const PORT = Number(process.env.PORT ?? 5174);
-const CLIENT_ORIGIN = process.env.CLIENT_ORIGIN ?? "http://localhost:5173";
-
-app.use(helmet());
-app.use(compression());
-app.use(morgan("dev"));
-app.use(
-  cors({
-    origin: CLIENT_ORIGIN.split(",").map((o) => o.trim()),
-  }),
-);
-
-app.get("/api/health", (_req, res) => {
-  res.json({ status: "ok" });
-});
-
-// All TheMealDB traffic is proxied through here — the API key never reaches the client.
-app.use("/api", mealdbRouter);
-
-app.use((req: Request, res: Response) => {
-  res.status(404).json({ error: `Not found: ${req.method} ${req.path}` });
-});
-
-// Centralized error handler — keeps upstream failures from leaking stack traces.
-app.use((err: Error & { status?: number }, _req: Request, res: Response, _next: NextFunction) => {
-  console.error(err);
-  res.status(err.status ?? 500).json({ error: err.message ?? "Internal server error" });
-});
 
 app.listen(PORT, () => {
   console.log(`Recipes proxy server listening on http://localhost:${PORT}`);

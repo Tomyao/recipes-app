@@ -1,12 +1,12 @@
 # Recipes PWA
 
-A installable, offline-capable recipe browser built on [TheMealDB](https://www.themealdb.com/api.php). React/Vite client talks only to a small Express proxy, which is the sole holder of the TheMealDB API key.
+An installable, offline-capable recipe browser built on [TheMealDB](https://www.themealdb.com/api.php). React/Vite client talks only to a small Express proxy, which is the sole holder of the TheMealDB API key.
 
 ## Overview & features
 
 - **Search, browse, and filter** recipes by name or category.
 - **Recipe details**: ingredients, instructions, tags, YouTube link, original source.
-- **Offline favorites**: save/unsave any recipe; favorites are stored in IndexedDB on-device and are fully readable/removable offline.
+- **Offline favorites**: save/unsave any recipe; full details (ingredients, instructions, tags, YouTube/source links) are fetched and stored in IndexedDB on-device when you favorite it, so the whole recipe — not just a summary — is readable/removable offline.
 - **Installable PWA**: manifest + hand-written service worker precache the app shell and provide an offline fallback page.
 - **Runtime caching**: stale-while-revalidate for images/categories, network-first with cache fallback for search/meal/filter data.
 - **Accessible**: skip link, semantic landmarks, labeled search form, `aria-pressed` favorite buttons, visible focus rings, alt text on every recipe image.
@@ -14,7 +14,7 @@ A installable, offline-capable recipe browser built on [TheMealDB](https://www.t
 
 ## Tech stack
 
-- **Client**: React 18, Vite, TypeScript, Tailwind CSS, hand-rolled shadcn/ui-style components (Radix primitives + `class-variance-authority`), TanStack Query, React Router, `idb`, `sonner` (toasts), `lucide-react` (icons).
+- **Client**: React 18, Vite, TypeScript, Tailwind CSS, hand-rolled shadcn/ui-style components (Radix primitives + `class-variance-authority`), TanStack Query, React Router, `idb`, `sonner` (toasts), `lucide-react` (icons), self-hosted Inter variable font (`@fontsource-variable/inter`).
 - **Server**: Node.js, Express, TypeScript (run via `tsx`), `helmet`, `cors`, `compression`, `morgan`, in-memory TTL cache.
 
 ## Project structure
@@ -35,17 +35,21 @@ A installable, offline-capable recipe browser built on [TheMealDB](https://www.t
   vite.config.ts
   tailwind.config.cjs
   postcss.config.cjs
-  src/main.tsx             App entry, providers, SW registration
+  vercel.json               SPA fallback rewrite (client-side routing)
+  src/main.tsx              App entry, providers, SW registration
   src/App.tsx               Routes + layout
+  src/registerSW.ts         Registers sw.js, shows update/offline toasts
   src/pages/                Home, Details, Favorites
-  src/components/           Header, RecipeCard, CategoryChips, ErrorBoundary, ThemeToggle, ui/*
+  src/components/           Header, RecipeCard, CategoryChips, ErrorBoundary, ThemeToggle,
+                             EmptyState, SkipLink, ui/*
   src/features/favorites/   IndexedDB helpers (db.ts) + React Query hooks (useFavorites.ts)
+  src/hooks/                useOnlineStatus.ts
   src/lib/                  api.ts (proxy client), queryClient.ts, types.ts, utils.ts (cn helper)
+  src/styles/globals.css    Tailwind layers + CSS-variable theme
   public/manifest.webmanifest
   public/offline.html
-  public/sw.js              Hand-written service worker (see "Service worker" note below)
+  public/sw.js              Hand-written service worker (see note below)
   public/icons/*            Placeholder SVG icons
-  vercel.json               SPA fallback + reverse-proxy rewrite to the deployed server
 ```
 
 > **Note on `sw.js` location**: the brief lists it as `src/sw.js`, but it's shipped from `public/sw.js` instead. Files under `src/` are only emitted into the production build if they're imported into the JS module graph — a standalone worker script isn't. `public/` is copied byte-for-byte to the site root in both `vite dev` and the production build, which is required for a same-origin, root-scoped service worker to register reliably in both environments.
@@ -67,7 +71,7 @@ cd server && npm i && npm run dev   # http://localhost:5174
 cd client && npm i && npm run dev   # http://localhost:5173
 ```
 
-The Vite dev server proxies `/api/*` to `http://localhost:5174`, so the client only ever calls same-origin `/api/*` — matching production, where you'd deploy the client behind the same domain/reverse proxy as the server (or set `CLIENT_ORIGIN` for CORS if hosted separately).
+The Vite dev server proxies `/api/*` to `http://localhost:5174`, so in dev the client calls same-origin `/api/*` without any extra config. In production this still works as-is for a same-origin deployment; for a cross-origin one (e.g. two separate Vercel projects — see "Deploying both to Vercel" below), set `VITE_API_BASE_URL` on the client and `CLIENT_ORIGIN` on the server.
 
 ### Environment variables
 
@@ -122,16 +126,17 @@ Each strategy is a small standalone function in `sw.js` (`networkFirst`, `staleW
 
 ### Offline favorites
 
-- Persisted via `idb` in `client/src/features/favorites/db.ts` (`saveFavorite`, `removeFavorite`, `getFavorite`, `getAllFavorites`, `isFavorite`), keyed by `idMeal`.
-- `client/src/features/favorites/useFavorites.ts` wraps those in TanStack Query hooks (`useFavoritesList`, `useIsFavorite`, `useToggleFavorite`) so the UI reacts to changes without prop drilling.
-- The Favorites page works with the app fully offline (IndexedDB has no network dependency). Opening a favorited recipe's Details page offline shows the saved summary (image/category/area) with a note that full ingredients/instructions will load next time you're online — unless that detail response was already cached by the service worker's network-first `/api/meal/:id` handler, in which case the full page renders instantly from cache.
+- Persisted via `idb` in `client/src/features/favorites/db.ts` (`saveFavorite`, `removeFavorite`, `getFavorite`, `getAllFavorites`, `isFavorite`), keyed by `idMeal`. `FavoriteMeal` (`client/src/lib/types.ts`) stores the full recipe — ingredients, instructions, tags, YouTube/source links — not just a summary.
+- `client/src/features/favorites/useFavorites.ts` wraps those in TanStack Query hooks (`useFavoritesList`, `useIsFavorite`, `useToggleFavorite`) so the UI reacts to changes without prop drilling. All three use `networkMode: "always"`, since they only touch IndexedDB and must keep working while offline (React Query's default `networkMode` would otherwise pause them when `navigator.onLine` is false).
+- Favoriting a recipe fetches and saves its full details immediately (`useToggleFavorite`), even when favorited from a listing card whose API response is shallow (e.g. a category grid, which only has id/name/thumbnail). If that fetch can't complete (offline), the shallow data is saved as a fallback, and `Details.tsx` silently backfills the full details into IndexedDB the next time you view that recipe online.
+- The Favorites page and a favorited recipe's Details page both work fully offline (IndexedDB has no network dependency): Details falls back to the saved copy — rendered with the exact same layout as the live view, via the shared `RecipeContent` component — whenever the network request fails, with a small banner noting it's showing your saved copy.
 
 ### Testing offline behavior
 
 1. `npm run build && npm run preview` in `client/` (service workers are flaky on `vite dev`'s HMR; test against a production build).
 2. Open the app, browse a few recipes and categories, and save 1–2 favorites so the caches populate.
 3. DevTools → Application → Service Workers → check "Offline" (or Network tab → "Offline").
-4. Reload: previously visited pages and images should still render; unvisited recipes show `offline.html`'s friendly fallback (or the Details page's "saved copy" state, if favorited); Favorites remain fully editable.
+4. Reload: previously visited pages and images should still render; favorited recipes' Details pages render in full (with a "showing your saved copy" banner); unvisited, non-favorited recipes show `offline.html`'s friendly fallback; Favorites remain fully editable.
 5. Toggle "Offline" off again — the "Back online" toast should appear and fresh data should load on next navigation.
 
 ## Development scripts
@@ -172,16 +177,17 @@ Since the client and server are now on different origins, `public/sw.js` matches
 
 ## Security
 
-- The client only ever calls relative `/api/*` paths — grep `client/src` for `themealdb.com` and you'll find nothing outside of comments.
+- The client only ever calls its own proxy (`/api/*`, optionally prefixed with `VITE_API_BASE_URL` — see "Environment variables") — never TheMealDB directly. Grep `client/src` for `themealdb.com` and you'll find nothing.
 - `MEALDB_API_KEY` is read once in `server/src/routes/mealdb.ts` and used to build the upstream URL server-side; it is never included in any response sent to the client.
 - `helmet`, `cors` (restricted to `CLIENT_ORIGIN`), and centralized error handling (no stack traces leaked to clients) are wired up in `server/src/app.ts`.
 
 ## Post-generation checklist
 
-- [ ] Run `npm i` in both `server/` and `client/`.
+- [ ] `npm run install:all` at the repo root (or `npm i` in `server/` and `client/` separately).
 - [ ] `cp server/.env.example server/.env` and adjust if you have a paid TheMealDB key.
 - [ ] Replace the placeholder SVG icons in `client/public/icons/` with real branded PNG/SVG icons (at minimum 192×192 and 512×512, plus a maskable variant) — required for full cross-browser install prompts (some browsers don't yet support SVG manifest icons).
 - [ ] If you want the official shadcn CLI-managed components going forward, run `npx shadcn@latest init` in `client/` (see shadcn setup notes above) instead of hand-editing `src/components/ui/*`.
 - [ ] Bump `CACHE_VERSION` in `client/public/sw.js` before shipping any change to precached files or caching logic, so returning users get the update.
-- [ ] `npm run build` in both `server/` and `client/` before deploying.
+- [ ] `npm run build` in both `server/` and `client/` before deploying (or `npm run build` at the repo root for both at once).
+- [ ] If deploying client and server to different origins, set `VITE_API_BASE_URL` (client) and `CLIENT_ORIGIN` (server) — see "Environment variables" and "Deploying both to Vercel".
 - [ ] Test the offline flow against `npm run preview` (see "Testing offline behavior" above), not `npm run dev`.
